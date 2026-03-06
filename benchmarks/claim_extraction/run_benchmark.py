@@ -271,7 +271,12 @@ def run(model_key: str, case_ids: list[str] | None = None, *, resume: bool = Fal
         sys_msg, usr_msg = build_messages(tc["text"], tc["document_type"])
         print(f"  {tc['id']}: {tc['name']}...", end=" ", flush=True)
 
-        resp = call_model(cfg, sys_msg, usr_msg)
+        try:
+            resp = call_model(cfg, sys_msg, usr_msg)
+        except Exception as exc:
+            print(f"API ERROR: {exc}")
+            print(f"  Skipping remaining cases for {cfg.display_name}.")
+            break
         claims, json_ok = parse_claims(resp.raw_text)
         result = evaluate(tc, claims, json_ok)
 
@@ -291,8 +296,13 @@ def run(model_key: str, case_ids: list[str] | None = None, *, resume: bool = Fal
 
         print(f"score={result.total_score:.3f}  tokens={resp.prompt_tokens}+{resp.completion_tokens}  {resp.latency_ms:.0f}ms")
 
-    avg_score = sum(r.total_score for r in case_results) / len(case_results) if case_results else 0.0
-    avg_latency = total_latency / len(cases) if cases else 0.0
+    if not case_results:
+        print(f"  No results collected for {cfg.display_name} — skipping report.")
+        _delete_checkpoint(run_id)
+        return
+
+    avg_score = sum(r.total_score for r in case_results) / len(case_results)
+    avg_latency = total_latency / len(case_results)
     est_cost = (
         total_prompt_tokens * cfg.price_per_1m_input / 1_000_000
         + total_completion_tokens * cfg.price_per_1m_output / 1_000_000

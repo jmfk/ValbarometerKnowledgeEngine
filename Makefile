@@ -32,7 +32,7 @@ ifndef MODELS
 endif
 	@for model in $$(echo $(_RESOLVE_MODELS) | tr ',' ' '); do \
 		echo "=== Benchmarking $$model ==="; \
-		$(PYTHON) -m benchmarks.claim_extraction.run_benchmark --model $$model; \
+		$(PYTHON) -m benchmarks.claim_extraction.run_benchmark --model $$model || true; \
 	done
 
 benchmark-list: install
@@ -47,7 +47,7 @@ ifndef CASE
 endif
 	@for model in $$(echo $(MODELS) | tr ',' ' '); do \
 		echo "=== Benchmarking $$model on $(CASE) ==="; \
-		$(PYTHON) -m benchmarks.claim_extraction.run_benchmark --model $$model --case $(CASE); \
+		$(PYTHON) -m benchmarks.claim_extraction.run_benchmark --model $$model --case $(CASE) || true; \
 	done
 
 test: install
