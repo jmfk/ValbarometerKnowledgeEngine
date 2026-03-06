@@ -16,6 +16,8 @@ class ClaimScore:
 class CaseResult:
     case_id: str
     case_name: str
+    description: str = ""
+    purpose: str = ""
     claim_count_accuracy: float = 0.0
     subject_accuracy: float = 0.0
     topic_accuracy: float = 0.0
@@ -126,6 +128,8 @@ def evaluate(
     result = CaseResult(
         case_id=test_case["id"],
         case_name=test_case["name"],
+        description=test_case.get("description", ""),
+        purpose=test_case.get("purpose", ""),
     )
 
     result.json_compliance = 1.0 if json_ok else 0.0

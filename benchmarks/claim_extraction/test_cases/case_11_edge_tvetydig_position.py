@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_11",
     "name": "Tvetydig position",
     "description": "Text där partiets position är genuint oklar eller ambivalent",
+    "purpose": "Tests whether the model correctly identifies an 'unclear' stance when a party deliberately avoids committing to a position.",
     "document_type": "anförande",
     "text": (
         "Anf. 78 Johan Pehrson (L):\n\n"

@@ -24,7 +24,8 @@ from .prompt import build_messages
 from .report import RunSummary, write_results
 from .test_cases import load_all_test_cases, load_test_case
 
-CHECKPOINT_DIR = Path(__file__).resolve().parents[2] / "reports" / ".checkpoints"
+REPORTS_DIR = Path(__file__).resolve().parents[2] / "reports"
+STATE_PATH = REPORTS_DIR / "state.json"
 
 
 @dataclass
@@ -131,51 +132,82 @@ class _CaseCheckpoint:
     latency_ms: float
 
 
-def _checkpoint_path(run_id: str) -> Path:
-    return CHECKPOINT_DIR / f"{run_id}.json"
+def _load_state() -> dict:
+    if STATE_PATH.exists():
+        return json.loads(STATE_PATH.read_text(encoding="utf-8"))
+    return {}
+
+
+def _write_state(state: dict) -> None:
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    if state:
+        STATE_PATH.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    elif STATE_PATH.exists():
+        STATE_PATH.unlink()
+
+
+def _get_session_started(state: dict) -> str:
+    """Return existing session_started or create one for the current moment."""
+    if "session_started" not in state:
+        state["session_started"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    return state["session_started"]
 
 
 def _save_checkpoint(
     run_id: str,
     model_key: str,
     timestamp: str,
+    status: str,
     case_ids: list[str],
     completed: list[_CaseCheckpoint],
-) -> None:
-    CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-    data = {
-        "run_id": run_id,
+    error: str | None = None,
+) -> str:
+    """Save run state and return session_started timestamp."""
+    state = _load_state()
+    session_started = _get_session_started(state)
+    entry: dict = {
         "model_key": model_key,
         "timestamp": timestamp,
+        "status": status,
         "case_ids": case_ids,
         "completed": [asdict(c) for c in completed],
     }
-    _checkpoint_path(run_id).write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-
-def _load_checkpoint(run_id: str) -> dict | None:
-    p = _checkpoint_path(run_id)
-    if not p.exists():
-        return None
-    return json.loads(p.read_text(encoding="utf-8"))
+    if error:
+        entry["error"] = error
+    state.setdefault("runs", {})[run_id] = entry
+    _write_state(state)
+    return session_started
 
 
 def _find_latest_checkpoint(model_key: str) -> dict | None:
-    if not CHECKPOINT_DIR.exists():
+    state = _load_state()
+    candidates = [
+        (rid, data)
+        for rid, data in state.get("runs", {}).items()
+        if data.get("model_key") == model_key and data.get("status") == "running"
+    ]
+    if not candidates:
         return None
-    candidates = sorted(
-        CHECKPOINT_DIR.glob(f"{model_key}_*.json"), key=lambda p: p.name, reverse=True
-    )
-    for p in candidates:
-        data = json.loads(p.read_text(encoding="utf-8"))
-        if data.get("model_key") == model_key:
-            return data
-    return None
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    rid, data = candidates[0]
+    data["run_id"] = rid
+    return data
 
 
-def _delete_checkpoint(run_id: str) -> None:
-    p = _checkpoint_path(run_id)
-    p.unlink(missing_ok=True)
+def _finish_run(run_id: str, *, remove: bool = False) -> None:
+    state = _load_state()
+    runs = state.get("runs", {})
+    if remove:
+        runs.pop(run_id, None)
+    elif run_id in runs:
+        runs[run_id]["status"] = "error"
+        runs[run_id].pop("completed", None)
+        runs[run_id].pop("case_ids", None)
+    if not runs:
+        state = {}
+    else:
+        state["runs"] = runs
+    _write_state(state)
 
 
 def _restore_case_result(d: dict) -> CaseResult:
@@ -251,7 +283,9 @@ def run(model_key: str, case_ids: list[str] | None = None, *, resume: bool = Fal
 
     all_case_ids = [tc["id"] for tc in cases]
 
-    print(f"Running benchmark: {run_id}")
+    session_started = _save_checkpoint(run_id, model_key, ts.strftime("%Y-%m-%d %H:%M"), "running", all_case_ids, checkpoints)
+
+    print(f"Running benchmark: {run_id}  (session {session_started})")
     print(f"Model: {cfg.display_name} ({cfg.model_id})")
     print(f"Test cases: {len(cases)} ({len(done_ids)} cached)")
     print("-" * 60)
@@ -276,6 +310,8 @@ def run(model_key: str, case_ids: list[str] | None = None, *, resume: bool = Fal
         except Exception as exc:
             print(f"API ERROR: {exc}")
             print(f"  Skipping remaining cases for {cfg.display_name}.")
+            session_started = _save_checkpoint(run_id, model_key, ts.strftime("%Y-%m-%d %H:%M"), "error",
+                                               all_case_ids, checkpoints, error=str(exc))
             break
         claims, json_ok = parse_claims(resp.raw_text)
         result = evaluate(tc, claims, json_ok)
@@ -292,13 +328,13 @@ def run(model_key: str, case_ids: list[str] | None = None, *, resume: bool = Fal
             completion_tokens=resp.completion_tokens,
             latency_ms=resp.latency_ms,
         ))
-        _save_checkpoint(run_id, model_key, ts.strftime("%Y-%m-%d %H:%M"), all_case_ids, checkpoints)
+        session_started = _save_checkpoint(run_id, model_key, ts.strftime("%Y-%m-%d %H:%M"), "running", all_case_ids, checkpoints)
 
         print(f"score={result.total_score:.3f}  tokens={resp.prompt_tokens}+{resp.completion_tokens}  {resp.latency_ms:.0f}ms")
 
     if not case_results:
         print(f"  No results collected for {cfg.display_name} — skipping report.")
-        _delete_checkpoint(run_id)
+        _finish_run(run_id)
         return
 
     avg_score = sum(r.total_score for r in case_results) / len(case_results)
@@ -310,6 +346,7 @@ def run(model_key: str, case_ids: list[str] | None = None, *, resume: bool = Fal
 
     summary = RunSummary(
         run_id=run_id,
+        session=session_started,
         timestamp=ts.strftime("%Y-%m-%d %H:%M"),
         model=cfg.display_name,
         total_score=avg_score,
@@ -320,7 +357,7 @@ def run(model_key: str, case_ids: list[str] | None = None, *, resume: bool = Fal
     )
 
     write_results(summary, case_results)
-    _delete_checkpoint(run_id)
+    _finish_run(run_id, remove=True)
 
     print("-" * 60)
     print(f"Average score: {avg_score:.3f}")

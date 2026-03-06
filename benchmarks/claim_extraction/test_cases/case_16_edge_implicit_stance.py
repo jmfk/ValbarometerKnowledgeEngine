@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_16",
     "name": "Implicit stance",
     "description": "Position som aldrig uttrycks explicit men framgår av kontexten",
+    "purpose": "Tests extraction of claims where the stance is never stated directly but must be inferred from rhetorical context and implied criticism.",
     "document_type": "anförande",
     "text": (
         "Anf. 45 Magdalena Andersson (S):\n\n"

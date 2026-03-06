@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_02",
     "name": "Motion om migration",
     "description": "Motion som argumenterar för striktare migrationspolitik",
+    "purpose": "Tests extraction of a single claim with an 'oppose' stance from a politically charged motion with strong rhetoric.",
     "document_type": "motion",
     "text": (
         "Motion 2023/24:2891 av Jimmie Åkesson m.fl. (SD)\n\n"

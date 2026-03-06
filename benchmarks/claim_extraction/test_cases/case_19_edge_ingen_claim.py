@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_19",
     "name": "Text utan claims",
     "description": "Procedurell/administrativ text som inte innehåller politiska ståndpunkter",
+    "purpose": "Tests the model's ability to return zero claims when the text is purely procedural with no political positions.",
     "document_type": "motion",
     "text": (
         "Riksdagens protokoll 2023/24:45\n\n"

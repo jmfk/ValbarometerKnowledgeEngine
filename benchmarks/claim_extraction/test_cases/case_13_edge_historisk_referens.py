@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_13",
     "name": "Historisk referens",
     "description": "Text som refererar till historiska positioner som inte längre gäller",
+    "purpose": "Tests whether the model distinguishes a party's current stance from its historical positions, and correctly identifies a 'mixed' stance.",
     "document_type": "motion",
     "text": (
         "Motion 2023/24:892 av Per Bolund m.fl. (MP)\n\n"

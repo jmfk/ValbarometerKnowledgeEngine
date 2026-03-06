@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_14",
     "name": "Negation och dubbel negation",
     "description": "Text med negationer som gör stance svårtolkad",
+    "purpose": "Tests whether the model correctly resolves double negations and nested negations to determine the actual stance (support for higher taxes).",
     "document_type": "motion",
     "text": (
         "Motion 2023/24:4102 av Märta Stenevi m.fl. (MP)\n\n"

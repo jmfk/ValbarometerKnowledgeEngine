@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_01",
     "name": "Motion om kärnkraft",
     "description": "Tydlig motion som förespråkar kärnkraftsutbyggnad",
+    "purpose": "Baseline test for extracting a single, explicitly stated claim from a standard parliamentary motion with clear subject, topic, and stance.",
     "document_type": "motion",
     "text": (
         "Motion 2023/24:1456 av Lars Eriksson m.fl. (M)\n\n"

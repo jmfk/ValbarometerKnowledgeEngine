@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_07",
     "name": "Partiprogram om utbildning",
     "description": "Utdrag ur partiprogram om skolpolitik och betyg",
+    "purpose": "Tests extraction of two claims from a party manifesto covering education policy and profit restrictions in schools.",
     "document_type": "partiprogram",
     "text": (
         "Ur Socialdemokraternas valmanifest 2022\n\n"

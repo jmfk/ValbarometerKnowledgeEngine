@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_12",
     "name": "Flera ämnen i samma text",
     "description": "Text som täcker minst tre helt olika politikområden",
+    "purpose": "Tests extraction of three separate claims across entirely different policy areas (family, healthcare, defense) from a single text.",
     "document_type": "partiprogram",
     "text": (
         "Ur Kristdemokraternas valmanifest 2022\n\n"

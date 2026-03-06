@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_04",
     "name": "Anförande om försvar",
     "description": "Riksdagsanförande om försvarspolitik och NATO",
+    "purpose": "Tests extraction of two related but distinct claims (defense spending and NATO membership) from a single parliamentary speech.",
     "document_type": "anförande",
     "text": (
         "Anf. 47 Pål Jonson (M):\n\n"

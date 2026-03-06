@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_17",
     "name": "Flera aktörer i samma text",
     "description": "Text som beskriver flera partiers ståndpunkter samtidigt",
+    "purpose": "Tests extraction of multiple claims from different political actors mentioned in the same text, requiring correct subject attribution per claim.",
     "document_type": "anförande",
     "text": (
         "Anf. 156 Talmannen:\n\n"

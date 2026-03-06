@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_09",
     "name": "Motion om bostadspolitik",
     "description": "Motion om bostadsbyggande och hyresreglering",
+    "purpose": "Tests extraction of two claims where one supports reform and the other opposes existing regulation, requiring correct stance differentiation.",
     "document_type": "motion",
     "text": (
         "Motion 2023/24:1789 av Annie Lööf m.fl. (C)\n\n"

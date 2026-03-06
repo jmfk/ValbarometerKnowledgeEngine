@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_20",
     "name": "Lång text med utspädd information",
     "description": "Lång text där den relevanta claim-informationen är utspridd bland bakgrundstext",
+    "purpose": "Tests extraction from a long text where claims are buried among extensive background information, requiring the model to filter signal from noise.",
     "document_type": "motion",
     "text": (
         "Motion 2023/24:5678 av Elisabeth Svantesson m.fl. (M)\n\n"

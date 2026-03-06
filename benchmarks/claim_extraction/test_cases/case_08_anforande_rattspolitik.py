@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_08",
     "name": "Anförande om rättspolitik",
     "description": "Anförande om hårdare straff och gängkriminalitet",
+    "purpose": "Tests extraction of a single clear claim from a speech with strong language and multiple policy proposals that all belong to the same topic.",
     "document_type": "anförande",
     "text": (
         "Anf. 112 Gunnar Strömmer (M):\n\n"

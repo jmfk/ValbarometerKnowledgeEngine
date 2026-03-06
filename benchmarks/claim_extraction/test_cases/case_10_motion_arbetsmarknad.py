@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_10",
     "name": "Motion om arbetsmarknad",
     "description": "Motion om arbetsrätt och fackliga rättigheter",
+    "purpose": "Tests extraction of a single claim from a motion with multiple policy proposals that all fall under the same overarching labor rights topic.",
     "document_type": "motion",
     "text": (
         "Motion 2023/24:2456 av Teresa Carvalho m.fl. (S)\n\n"

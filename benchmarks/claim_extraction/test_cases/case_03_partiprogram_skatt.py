@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_03",
     "name": "Partiprogram om skattepolitik",
     "description": "Utdrag ur partiprogram med tydlig skattepolitisk position",
+    "purpose": "Tests extraction of two distinct claims from the same subject, where a single text covers both tax policy and green tax shift as separate topics.",
     "document_type": "partiprogram",
     "text": (
         "Ur Centerpartiets partiprogram, antaget vid partistämman 2023\n\n"

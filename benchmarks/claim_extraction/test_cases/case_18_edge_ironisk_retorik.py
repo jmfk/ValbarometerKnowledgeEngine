@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_18",
     "name": "Ironisk retorik",
     "description": "Text med sarkasm och retoriska frågor som kan vilseleda modellen",
+    "purpose": "Tests whether the model sees through sarcasm and rhetorical questions to identify the speaker's actual stance rather than the literal surface meaning.",
     "document_type": "anförande",
     "text": (
         "Anf. 89 Jonas Sjöstedt (V):\n\n"

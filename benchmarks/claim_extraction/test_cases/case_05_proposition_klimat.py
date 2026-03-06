@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_05",
     "name": "Proposition om klimat",
     "description": "Propositionstext om klimatåtgärder med tydlig regeringsposition",
+    "purpose": "Tests extraction from a formal government proposition, where the subject is 'Regeringen' rather than a named party.",
     "document_type": "proposition",
     "text": (
         "Prop. 2023/24:176 Klimatpolitiska handlingsplanen\n\n"

@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_06",
     "name": "Motion om sjukvård",
     "description": "Motion om vårdköer och förstatligande av sjukvården",
+    "purpose": "Tests extraction of two claims with opposing stances from the same subject — one supporting nationalization and one opposing privatization.",
     "document_type": "motion",
     "text": (
         "Motion 2023/24:3201 av Nooshi Dadgostar m.fl. (V)\n\n"

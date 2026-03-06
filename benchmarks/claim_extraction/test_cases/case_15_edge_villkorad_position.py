@@ -2,6 +2,7 @@ TEST_CASE = {
     "id": "case_15",
     "name": "Villkorad position",
     "description": "Stöd som är villkorat med 'om' och 'under förutsättning att'",
+    "purpose": "Tests whether the model identifies a conditional, 'mixed' stance when support is explicitly contingent on prerequisites being met.",
     "document_type": "anförande",
     "text": (
         "Anf. 203 Ebba Busch (KD):\n\n"
