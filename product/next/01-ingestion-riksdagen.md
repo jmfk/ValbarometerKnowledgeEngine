@@ -7,9 +7,10 @@ Hämta rådata från Riksdagens öppna data för att bygga grunden i kunskapsbas
 
 ## Funktionella krav
 1. **Motioner**: Hämta alla motioner för innevarande och föregående mandatperiod.
-2. **Voteringar**: Hämta röstningsresultat per parti och individ.
-3. **Anföranden**: Hämta protokollförda anföranden i kammaren.
-4. **Metadata**: Spara käll-URL, datum och dokument-ID för spårbarhet.
+2. **Propositioner**: Hämta propositioner via Riksdagens API. Spara med `document_type='proposition'`.
+3. **Voteringar**: Hämta röstningsresultat per parti och individ.
+4. **Anföranden**: Hämta protokollförda anföranden i kammaren.
+5. **Metadata**: Spara käll-URL, datum och dokument-ID för spårbarhet.
 
 ## Tekniska steg
 - Implementera `RiksdagenClient` i Python.
