@@ -25,6 +25,18 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 | aliases    | jsonb                                         | DEFAULT '[]' |
 | created_at | timestamptz                                   | DEFAULT now |
 
+### politician_affiliations
+
+Kopplar politiker till parti med tidsperiod (hanterar partibyten).
+
+| field         | type | constraint            |
+| ------------- | ---- | --------------------- |
+| id            | uuid | PK, default           |
+| politician_id | uuid | FK entities, NOT NULL |
+| party_id      | uuid | FK entities, NOT NULL |
+| from_date     | date | NOT NULL              |
+| to_date       | date | NULL (NULL = pågående)|
+
 ### documents
 
 | field         | type                                                                                                          | constraint  |
@@ -48,12 +60,12 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 | id          | uuid        | PK, default  |
 | document_id | uuid        | FK documents |
 | chunk_text  | text        | NOT NULL     |
-| embedding   | vector(3072)| NULL         |
+| embedding   | vector(1536)| NULL         |
 | chunk_index | int         | NOT NULL     |
 | tsv         | tsvector    | GENERATED    |
 
 `tsv` genereras från `chunk_text` för BM25/full-text search.
-`embedding` dimensioner matchar `text-embedding-3-large` (3072).
+`embedding` dimensioner matchar `text-embedding-3-small` (1536).
 
 Index:
 ```sql
@@ -61,6 +73,17 @@ CREATE INDEX idx_chunks_embedding ON document_chunks USING hnsw (embedding vecto
 CREATE INDEX idx_chunks_tsv ON document_chunks USING gin (tsv);
 CREATE INDEX idx_chunks_document ON document_chunks (document_id);
 ```
+
+### chunk_topics
+
+Many-to-many: varje chunk kan klassificeras under flera topics.
+
+| field    | type | constraint                     |
+| -------- | ---- | ------------------------------ |
+| chunk_id | uuid | FK document_chunks, NOT NULL   |
+| topic_id | uuid | FK topics, NOT NULL            |
+
+Composite PK: `(chunk_id, topic_id)`.
 
 ### topics
 
@@ -76,7 +99,6 @@ CREATE INDEX idx_chunks_document ON document_chunks (document_id);
 | ----------------- | --------------------------------------------- | ------------ |
 | id                | uuid                                          | PK, default  |
 | subject_entity_id | uuid                                          | FK entities  |
-| topic_id          | uuid                                          | FK topics    |
 | claim_text        | text                                          | NOT NULL     |
 | stance            | enum('support', 'oppose', 'unclear', 'mixed') | NOT NULL     |
 | confidence        | float                                         |              |
@@ -87,6 +109,17 @@ CREATE INDEX idx_chunks_document ON document_chunks (document_id);
 
 `valid_from` / `valid_to` möjliggör policy drift detection.
 `review_status` stödjer admin review workflow.
+
+### claim_topics
+
+Many-to-many: en claim kan röra flera sakfrågor (t.ex. "klimatskatt" → climate + taxation).
+
+| field    | type | constraint          |
+| -------- | ---- | ------------------- |
+| claim_id | uuid | FK claims, NOT NULL |
+| topic_id | uuid | FK topics, NOT NULL |
+
+Composite PK: `(claim_id, topic_id)`.
 
 ### claim_evidence
 
@@ -110,27 +143,32 @@ CREATE INDEX idx_chunks_document ON document_chunks (document_id);
 
 ### vote_positions
 
-| field     | type                              | constraint  |
-| --------- | --------------------------------- | ----------- |
-| id        | uuid                              | PK, default |
-| vote_id   | uuid                              | FK votes    |
-| entity_id | uuid                              | FK entities |
-| position  | enum('yes', 'no', 'abstain', 'absent') | NOT NULL |
+Alltid per ledamot (politician). Parti-aggregering beräknas via `politician_affiliations`.
 
-Composite unique constraint: `(vote_id, entity_id)`.
+| field         | type                                     | constraint  |
+| ------------- | ---------------------------------------- | ----------- |
+| id            | uuid                                     | PK, default |
+| vote_id       | uuid                                     | FK votes    |
+| politician_id | uuid                                     | FK entities (type='politician') |
+| position      | enum('yes', 'no', 'abstain', 'absent')   | NOT NULL    |
+
+Composite unique constraint: `(vote_id, politician_id)`.
 
 ## Migrationsordning
 
 1. Extensions (`pgvector`, `pg_trgm`, `pgcrypto`)
 2. Enum types
 3. `entities`
-4. `documents` (FK → entities)
-5. `document_chunks` (FK → documents) + index
-6. `topics`
-7. `claims` (FK → entities, topics)
-8. `claim_evidence` (FK → claims, document_chunks)
-9. `votes` (FK → topics)
-10. `vote_positions` (FK → votes, entities)
+4. `politician_affiliations` (FK → entities)
+5. `documents` (FK → entities)
+6. `document_chunks` (FK → documents) + index
+7. `topics`
+8. `chunk_topics` (FK → document_chunks, topics)
+9. `claims` (FK → entities)
+10. `claim_topics` (FK → claims, topics)
+11. `claim_evidence` (FK → claims, document_chunks)
+12. `votes` (FK → topics)
+13. `vote_positions` (FK → votes, entities)
 
 ## Seed data: Riksdagspartier
 

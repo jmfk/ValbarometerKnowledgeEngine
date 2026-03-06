@@ -218,6 +218,8 @@ raw documents
 
 # Datamodell
 
+Detaljerat schema med constraints, index och migrationsordning: se [00-database-setup.md](next/00-database-setup.md).
+
 ## Entities
 
 ```
@@ -240,15 +242,17 @@ entities
 documents
 ```
 
-| field         | type      |
-| ------------- | --------- |
-| id            | uuid      |
-| source_id     | uuid      |
-| title         | text      |
-| body          | text      |
-| document_type | enum      |
-| published_at  | timestamp |
-| metadata      | jsonb     |
+| field           | type      |
+| --------------- | --------- |
+| id              | uuid      |
+| source_id       | uuid      |
+| title           | text      |
+| body            | text      |
+| document_type   | enum      |
+| published_at    | timestamp |
+| metadata        | jsonb     |
+| raw_storage_key | text      |
+| created_at      | timestamp |
 
 ------
 
@@ -305,10 +309,15 @@ claims
 | ----------------- | --------- |
 | id                | uuid      |
 | subject_entity_id | uuid      |
-| topic_id          | uuid      |
+| claim_text        | text      |
 | stance            | enum      |
 | confidence        | float     |
+| valid_from        | date      |
+| valid_to          | date      |
+| review_status     | enum      |
 | created_at        | timestamp |
+
+Topics kopplas via junction-tabell `claim_topics(claim_id, topic_id)` (many-to-many).
 
 ------
 
@@ -346,15 +355,32 @@ votes
 
 ## Vote positions
 
+Alltid per ledamot (politician). Parti-aggregering beräknas via `politician_affiliations`.
+
 ```
 vote_positions
 ```
 
-| field     | type               |
-| --------- | ------------------ |
-| vote_id   | uuid               |
-| entity_id | uuid               |
-| vote      | yes / no / abstain |
+| field         | type                          |
+| ------------- | ----------------------------- |
+| vote_id       | uuid                          |
+| politician_id | uuid                          |
+| position      | yes / no / abstain / absent   |
+
+## Politician affiliations
+
+Kopplar politiker till parti med tidsperiod.
+
+```
+politician_affiliations
+```
+
+| field         | type |
+| ------------- | ---- |
+| politician_id | uuid |
+| party_id      | uuid |
+| from_date     | date |
+| to_date       | date |
 
 ------
 
@@ -368,58 +394,52 @@ PDF → text.
 
 ### 2 Chunking
 
-```
-~500 tokens
-```
+Section-based (respektera rubriknivåer). Fallback ~500 tokens för ostrukturerad text.
 
 ### 3 Embeddings
 
 Model:
 
 ```
-bge-m3
-or
-text-embedding-3-large
+text-embedding-3-small (1536 dim)
 ```
 
 ### 4 Topic classification
 
-LLM eller finetuned classifier.
+Gemini 2.5 Flash mot topic-taxonomin.
 
 ### 5 Claim extraction
 
-Structured extraction:
+Gemini 2.5 Flash, structured extraction:
 
 ```
 subject
-topic
+topics (multi-topic via claim_topics)
 stance
 evidence span
 ```
 
-### 6 Deduplication
+### 6 Deduplication (deferred)
 
-Multiple documents kan säga samma sak.
+Multiple documents kan säga samma sak. Implementeras post-MVP.
 
 ------
 
 # Retrieval architecture
 
-Hybrid search:
+MVP: metadata filtering + vector search.
 
 ```
 metadata filtering
 +
-BM25
-+
-vector search
+vector search (pgvector)
 ```
 
-Ranking pipeline:
+Post-MVP: BM25 hybrid + reranking.
 
 ```
-retrieve
-rerank
+retrieve (hybrid)
+rerank (cross-encoder)
 extract evidence
 generate structured output
 ```
@@ -497,37 +517,33 @@ AI extraction måste kunna granskas.
 
 # MVP roadmap
 
-## Phase 1
+## Phase 1 – DB & Riksdagsdata
 
-Riksdagsdata ingestion.
+- Databasschema + migrations (Docker Postgres + pgvector)
+- Riksdagen ingestion: motioner + voteringar
+- Anföranden skjuts till Phase 2
 
-- motioner
-- voteringar
-- anföranden
+## Phase 2 – Processing & Extraction
 
-------
+- Section-based chunking + embeddings (text-embedding-3-small)
+- Claim extraction (Gemini 2.5 Flash)
+- Topic classification per chunk/claim
+- Golden set-validering
 
-## Phase 2
+## Phase 3 – Minimal API
 
-Partiprogram ingestion.
+- `/entities`, `/claims`, `/votes`, `/topics`
+- Metadata-filter + vector search
+- Anföranden-ingestion
 
-------
+## Deferred (post-MVP)
 
-## Phase 3
-
-Claim extraction pipeline.
-
-------
-
-## Phase 4
-
-Topic taxonomy.
-
-------
-
-## Phase 5
-
-Comparison API.
+- Parti-scraping (Step 2) – fragilt, kräver manuellt underhåll per parti
+- Comparison engine (`/compare`) – kräver fungerande claim-bas först
+- BM25 hybrid search + reranking – överengineerat för MVP
+- Admin panel + claim review workflow – kräver redaktörer
+- Politician issue ownership scoring
+- Pressmeddelanden via RSS
 
 ------
 
