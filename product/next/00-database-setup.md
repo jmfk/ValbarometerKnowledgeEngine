@@ -15,11 +15,12 @@ alembic/
 ├── versions/
 │   ├── 001_extensions_and_enums.py
 │   ├── 002_entities_and_affiliations.py
-│   ├── 003_documents_and_chunks.py
-│   ├── 004_topics_and_chunk_topics.py
-│   ├── 005_claims_and_evidence.py
-│   ├── 006_votes_and_positions.py
-│   └── 007_materialized_views.py
+│   ├── 003_documents_and_document_entities.py
+│   ├── 004_document_chunks.py
+│   ├── 005_topics_and_chunk_topics.py
+│   ├── 006_claims_and_evidence.py
+│   ├── 007_votes_and_positions.py
+│   └── 008_materialized_views.py
 └── alembic.ini
 ```
 
@@ -42,6 +43,7 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 | name       | text                                          | NOT NULL    |
 | aliases    | jsonb                                         | DEFAULT '[]' |
 | created_at | timestamptz                                   | DEFAULT now |
+| updated_at | timestamptz                                   | DEFAULT now |
 
 ### ingestion_state
 
@@ -72,23 +74,50 @@ Kopplar politiker till parti med tidsperiod (hanterar partibyten).
 
 ### documents
 
-| field         | type                                                                                                          | constraint  |
-| ------------- | ------------------------------------------------------------------------------------------------------------- | ----------- |
-| id            | uuid                                                                                                          | PK, default |
-| source_id     | uuid                                                                                                          | FK entities |
-| title         | text                                                                                                          | NOT NULL    |
-| body          | text                                                                                                          |             |
-| document_type | enum('motion', 'proposition', 'party_program', 'congress_decision', 'speech', 'press_release', 'policy_paper') | NOT NULL    |
-| published_at  | timestamptz                                                                                                   |             |
-| metadata      | jsonb                                                                                                         | DEFAULT '{}' |
-| raw_storage_key | text                                                                                                        |             |
-| created_at    | timestamptz                                                                                                   | DEFAULT now |
+| field               | type                                                                                                          | constraint  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- | ----------- |
+| id                  | uuid                                                                                                          | PK, default |
+| title               | text                                                                                                          | NOT NULL    |
+| body                | text                                                                                                          |             |
+| document_type       | enum('motion', 'proposition', 'party_program', 'congress_decision', 'speech', 'press_release', 'policy_paper') | NOT NULL    |
+| source_external_id  | text                                                                                                          | UNIQUE      |
+| source_url          | text                                                                                                          |             |
+| published_at        | timestamptz                                                                                                   |             |
+| metadata            | jsonb                                                                                                         | DEFAULT '{}' |
+| raw_storage_key     | text                                                                                                          |             |
+| created_at          | timestamptz                                                                                                   | DEFAULT now |
+| updated_at          | timestamptz                                                                                                   | DEFAULT now |
 
 `raw_storage_key` pekar på originaldokumentet i S3.
+`source_external_id` är dokumentets ID i källsystemet (t.ex. Riksdagens dok-ID). Används för upsert/idempotens.
+`source_url` är den URL dokumentet hämtades från. Explicit kolumn istället för i metadata-jsonb.
+
+`source_id` har tagits bort — ersatt av `document_entities` (many-to-many, se nedan).
 
 Index:
 ```sql
-CREATE UNIQUE INDEX idx_documents_external_id ON documents ((metadata->>'external_id')) WHERE metadata->>'external_id' IS NOT NULL;
+CREATE UNIQUE INDEX idx_documents_external_id ON documents (source_external_id) WHERE source_external_id IS NOT NULL;
+CREATE INDEX idx_documents_type ON documents (document_type);
+CREATE INDEX idx_documents_published ON documents (published_at);
+```
+
+### document_entities
+
+Many-to-many: kopplar dokument till entiteter med roll. En proposition kan ha regeringen som author, en motion kan ha flera ledamöter från olika partier som signatories.
+
+| field       | type                                             | constraint             |
+| ----------- | ------------------------------------------------ | ---------------------- |
+| id          | uuid                                             | PK, default            |
+| document_id | uuid                                             | FK documents, NOT NULL |
+| entity_id   | uuid                                             | FK entities, NOT NULL  |
+| role        | enum('author', 'signatory', 'committee', 'source') | NOT NULL             |
+
+Composite unique: `(document_id, entity_id, role)`.
+
+Index:
+```sql
+CREATE INDEX idx_document_entities_entity ON document_entities (entity_id);
+CREATE INDEX idx_document_entities_document ON document_entities (document_id);
 ```
 
 ### document_chunks
@@ -100,6 +129,7 @@ CREATE UNIQUE INDEX idx_documents_external_id ON documents ((metadata->>'externa
 | chunk_text  | text        | NOT NULL     |
 | embedding   | vector(1536)| NULL         |
 | chunk_index | int         | NOT NULL     |
+| token_count | int         |              |
 | tsv         | tsvector    | GENERATED    |
 
 `tsv` genereras från `chunk_text` för BM25/full-text search.
@@ -107,7 +137,9 @@ CREATE UNIQUE INDEX idx_documents_external_id ON documents ((metadata->>'externa
 
 Index:
 ```sql
-CREATE INDEX idx_chunks_embedding ON document_chunks USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX idx_chunks_embedding ON document_chunks
+  USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 24, ef_construction = 128);
 CREATE INDEX idx_chunks_tsv ON document_chunks USING gin (tsv);
 CREATE INDEX idx_chunks_document ON document_chunks (document_id);
 ```
@@ -146,6 +178,7 @@ Composite PK: `(chunk_id, topic_id)`.
 | extraction_model  | text                                          |              |
 | extraction_prompt_version | text                                  |              |
 | created_at        | timestamptz                                   | DEFAULT now  |
+| updated_at        | timestamptz                                   | DEFAULT now  |
 
 `valid_from` / `valid_to` möjliggör policy drift detection.
 `review_status` stödjer admin review workflow.
@@ -192,13 +225,17 @@ CREATE INDEX idx_claim_history_claim ON claim_history (claim_id);
 
 ### votes
 
-| field           | type | constraint |
-| --------------- | ---- | ---------- |
-| id              | uuid | PK, default|
-| riksdag_vote_id | text | UNIQUE     |
-| title           | text | NOT NULL   |
-| date            | date | NOT NULL   |
-| topic_id        | uuid | FK topics, NULL |
+| field           | type        | constraint           |
+| --------------- | ----------- | -------------------- |
+| id              | uuid        | PK, default          |
+| riksdag_vote_id | text        | UNIQUE               |
+| document_id     | uuid        | FK documents, NULL   |
+| title           | text        | NOT NULL             |
+| date            | date        | NOT NULL             |
+| topic_id        | uuid        | FK topics, NULL      |
+| updated_at      | timestamptz | DEFAULT now          |
+
+`document_id` kopplar voteringen till den proposition eller motion som röstningen gäller.
 
 ### vote_positions
 
@@ -228,7 +265,7 @@ Aggregerad poäng per politiker och sakfråga. Beräknas från antal motioner, a
 ```sql
 CREATE MATERIALIZED VIEW politician_issue_scores AS
 SELECT
-  d.source_id AS entity_id,
+  de.entity_id,
   ct.topic_id,
   COUNT(DISTINCT d.id) AS doc_count,
   SUM(CASE d.document_type
@@ -237,11 +274,12 @@ SELECT
     ELSE 1
   END)::float AS score,
   now() AS computed_at
-FROM documents d
+FROM document_entities de
+JOIN documents d ON d.id = de.document_id
 JOIN document_chunks dc ON dc.document_id = d.id
 JOIN chunk_topics ct ON ct.chunk_id = dc.id
-WHERE d.source_id IN (SELECT id FROM entities WHERE type = 'politician')
-GROUP BY d.source_id, ct.topic_id;
+WHERE de.entity_id IN (SELECT id FROM entities WHERE type = 'politician')
+GROUP BY de.entity_id, ct.topic_id;
 
 CREATE UNIQUE INDEX idx_pis_entity_topic ON politician_issue_scores (entity_id, topic_id);
 ```
@@ -255,17 +293,18 @@ Refreshas periodiskt: `REFRESH MATERIALIZED VIEW CONCURRENTLY politician_issue_s
 3. `entities`
 4. `ingestion_state`
 5. `politician_affiliations` (FK → entities)
-6. `documents` (FK → entities) + unique index
-7. `document_chunks` (FK → documents) + index
-8. `topics`
-9. `chunk_topics` (FK → document_chunks, topics)
-10. `claims` (FK → entities)
-11. `claim_topics` (FK → claims, topics)
-12. `claim_history` (FK → claims)
-13. `claim_evidence` (FK → claims, document_chunks)
-14. `votes` (FK → topics)
-15. `vote_positions` (FK → votes, entities)
-16. `politician_issue_scores` (materialized view)
+6. `documents` + unique index
+7. `document_entities` (FK → documents, entities)
+8. `document_chunks` (FK → documents) + index
+9. `topics`
+10. `chunk_topics` (FK → document_chunks, topics)
+11. `claims` (FK → entities)
+12. `claim_topics` (FK → claims, topics)
+13. `claim_history` (FK → claims)
+14. `claim_evidence` (FK → claims, document_chunks)
+15. `votes` (FK → topics, documents)
+16. `vote_positions` (FK → votes, entities)
+17. `politician_issue_scores` (materialized view)
 
 ## Seed data: Riksdagspartier
 

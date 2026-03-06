@@ -15,12 +15,12 @@ Hämta rådata från Riksdagens öppna data för att bygga grunden i kunskapsbas
 ## Idempotens & felhantering
 
 ### Unika nycklar
-- `documents`: UNIQUE constraint på `(document_type, metadata->>'riksdag_doc_id')`.
-- `votes`: UNIQUE constraint på `riksdag_vote_id` (redan i schemat).
+- `documents.source_external_id`: Sätts till Riksdagens dok-ID (t.ex. `H5021234`). UNIQUE constraint möjliggör upsert.
+- `votes.riksdag_vote_id`: UNIQUE (redan i schemat).
 - `vote_positions`: Composite unique `(vote_id, politician_id)` (redan i schemat).
 
 ### Upsert-semantik
-Alla inserts använder `INSERT ... ON CONFLICT DO UPDATE` för att säkert kunna köra om ingestion utan dubbletter.
+Alla inserts använder `INSERT ... ON CONFLICT (source_external_id) DO UPDATE` för att säkert kunna köra om ingestion utan dubbletter.
 
 ### Inkrementell hämtning
 - Spara `last_fetched_at` per dokumenttyp i en `ingestion_state`-tabell eller config.
@@ -46,6 +46,8 @@ Alla inserts använder `INSERT ... ON CONFLICT DO UPDATE` för att säkert kunna
 - Implementera `RiksdagenClient` i Python med retry-decorator och session-hantering.
 - Skapa schema för `documents` och `votes` i PostgreSQL.
 - Bygga en crawler som hanterar paginering och rate-limiting från Riksdagen.
-- Lagra rå-XML/HTML i S3 och metadata i Postgres.
+- Lagra rådata i S3 (JSON-format primärt, XML som fallback) och metadata i Postgres.
+- Skapa `document_entities`-kopplingar: motioner → ledamöter (role='author'/'signatory'), propositioner → entitet för regeringen/departement, anföranden → talaren.
+- Koppla voteringar till propositioner/motioner via `votes.document_id`.
 - Implementera `ingestion_state`-tabell för checkpointing.
 - Konfigurera `structlog` med JSON-output och Prometheus counters.
