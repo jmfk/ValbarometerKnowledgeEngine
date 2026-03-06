@@ -36,14 +36,23 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 ### entities
 
-| field      | type                                          | constraint  |
-| ---------- | --------------------------------------------- | ----------- |
-| id         | uuid                                          | PK, default |
-| type       | enum('party', 'politician', 'organization')   | NOT NULL    |
-| name       | text                                          | NOT NULL    |
-| aliases    | jsonb                                         | DEFAULT '[]' |
-| created_at | timestamptz                                   | DEFAULT now |
-| updated_at | timestamptz                                   | DEFAULT now |
+| field        | type                                          | constraint      |
+| ------------ | --------------------------------------------- | --------------- |
+| id           | uuid                                          | PK, default     |
+| type         | enum('party', 'politician', 'organization')   | NOT NULL        |
+| name         | text                                          | NOT NULL        |
+| slug         | text                                          | UNIQUE, NOT NULL|
+| abbreviation | text                                          | NULL            |
+| color        | text                                          | NULL            |
+| aliases      | jsonb                                         | DEFAULT '[]'    |
+| metadata     | jsonb                                         | DEFAULT '{}'    |
+| created_at   | timestamptz                                   | DEFAULT now     |
+| updated_at   | timestamptz                                   | DEFAULT now     |
+
+`slug` är URL-vänlig identifierare (t.ex. `moderaterna`, `ulf-kristersson`). Stödjer lookup via API: `GET /entities/moderaterna`.
+`abbreviation` är partiförkortning (t.ex. `S`, `M`, `SD`). NULL för politiker.
+`color` är hex-färgkod för visuell representation (t.ex. `#E8112D`). Kritiskt för diagram och jämförelsevyer.
+`metadata` för ytterligare attribut som `logo_url`, `photo_url` etc.
 
 ### ingestion_state
 
@@ -62,15 +71,18 @@ Composite unique: `(source, document_type)`.
 
 ### politician_affiliations
 
-Kopplar politiker till parti med tidsperiod (hanterar partibyten).
+Kopplar politiker till parti med tidsperiod och roll (hanterar partibyten och rollförändringar).
 
 | field         | type | constraint            |
 | ------------- | ---- | --------------------- |
 | id            | uuid | PK, default           |
 | politician_id | uuid | FK entities, NOT NULL |
 | party_id      | uuid | FK entities, NOT NULL |
+| role          | text | NULL                  |
 | from_date     | date | NOT NULL              |
 | to_date       | date | NULL (NULL = pågående)|
+
+`role` anger funktion, t.ex. `'partiledare'`, `'ledamot'`, `'språkrör'`. NULL = vanlig medlem.
 
 ### documents
 
@@ -83,6 +95,7 @@ Kopplar politiker till parti med tidsperiod (hanterar partibyten).
 | source_external_id  | text                                                                                                          | UNIQUE      |
 | source_url          | text                                                                                                          |             |
 | published_at        | timestamptz                                                                                                   |             |
+| date_precision      | enum('year', 'month', 'day', 'exact')                                                                         | DEFAULT 'day' |
 | metadata            | jsonb                                                                                                         | DEFAULT '{}' |
 | raw_storage_key     | text                                                                                                          |             |
 | created_at          | timestamptz                                                                                                   | DEFAULT now |
@@ -91,6 +104,7 @@ Kopplar politiker till parti med tidsperiod (hanterar partibyten).
 `raw_storage_key` pekar på originaldokumentet i S3.
 `source_external_id` är dokumentets ID i källsystemet (t.ex. Riksdagens dok-ID). Används för upsert/idempotens.
 `source_url` är den URL dokumentet hämtades från. Explicit kolumn istället för i metadata-jsonb.
+`date_precision` anger hur exakt `published_at` är. Partiprogram har ofta bara årtal (`year`), riksdagshandlingar har exakt datum (`day`). Frontend använder detta för korrekt datumformatering (t.ex. "2023" vs "15 mars 2023").
 
 `source_id` har tagits bort — ersatt av `document_entities` (many-to-many, se nedan).
 
@@ -157,11 +171,17 @@ Composite PK: `(chunk_id, topic_id)`.
 
 ### topics
 
-| field        | type | constraint |
-| ------------ | ---- | ---------- |
-| id           | uuid | PK, default|
-| name         | text | NOT NULL, UNIQUE |
-| parent_topic | uuid | FK topics, NULL |
+| field        | type | constraint         |
+| ------------ | ---- | ------------------ |
+| id           | uuid | PK, default        |
+| name         | text | NOT NULL, UNIQUE   |
+| slug         | text | UNIQUE, NOT NULL   |
+| display_name | text | NOT NULL           |
+| parent_topic | uuid | FK topics, NULL    |
+
+`name` är intern identifierare (engelska, t.ex. `migration`).
+`slug` är URL-vänlig identifierare (t.ex. `migration`, `foreign-policy`). Stödjer lookup via API: `GET /topics/migration`.
+`display_name` är den svenska etiketten som visas i frontend (t.ex. `Migration`, `Energi`).
 
 ### claims
 
@@ -310,14 +330,14 @@ Refreshas periodiskt: `REFRESH MATERIALIZED VIEW CONCURRENTLY politician_issue_s
 
 ```json
 [
-  { "type": "party", "name": "Socialdemokraterna", "aliases": ["S", "Socialdemokraterna", "socialdemokraterna"] },
-  { "type": "party", "name": "Moderaterna", "aliases": ["M", "Moderaterna", "moderaterna", "Nya Moderaterna"] },
-  { "type": "party", "name": "Sverigedemokraterna", "aliases": ["SD", "Sverigedemokraterna", "sverigedemokraterna"] },
-  { "type": "party", "name": "Centerpartiet", "aliases": ["C", "Centerpartiet", "centerpartiet"] },
-  { "type": "party", "name": "Vänsterpartiet", "aliases": ["V", "Vänsterpartiet", "vänsterpartiet"] },
-  { "type": "party", "name": "Kristdemokraterna", "aliases": ["KD", "Kristdemokraterna", "kristdemokraterna"] },
-  { "type": "party", "name": "Liberalerna", "aliases": ["L", "Liberalerna", "liberalerna", "Folkpartiet"] },
-  { "type": "party", "name": "Miljöpartiet", "aliases": ["MP", "Miljöpartiet", "miljöpartiet", "Miljöpartiet de gröna"] }
+  { "type": "party", "name": "Socialdemokraterna", "slug": "socialdemokraterna", "abbreviation": "S", "color": "#E8112D", "aliases": ["S", "Socialdemokraterna", "socialdemokraterna"] },
+  { "type": "party", "name": "Moderaterna", "slug": "moderaterna", "abbreviation": "M", "color": "#52BDEC", "aliases": ["M", "Moderaterna", "moderaterna", "Nya Moderaterna"] },
+  { "type": "party", "name": "Sverigedemokraterna", "slug": "sverigedemokraterna", "abbreviation": "SD", "color": "#DDDD00", "aliases": ["SD", "Sverigedemokraterna", "sverigedemokraterna"] },
+  { "type": "party", "name": "Centerpartiet", "slug": "centerpartiet", "abbreviation": "C", "color": "#009933", "aliases": ["C", "Centerpartiet", "centerpartiet"] },
+  { "type": "party", "name": "Vänsterpartiet", "slug": "vansterpartiet", "abbreviation": "V", "color": "#DA291C", "aliases": ["V", "Vänsterpartiet", "vänsterpartiet"] },
+  { "type": "party", "name": "Kristdemokraterna", "slug": "kristdemokraterna", "abbreviation": "KD", "color": "#000077", "aliases": ["KD", "Kristdemokraterna", "kristdemokraterna"] },
+  { "type": "party", "name": "Liberalerna", "slug": "liberalerna", "abbreviation": "L", "color": "#006AB3", "aliases": ["L", "Liberalerna", "liberalerna", "Folkpartiet"] },
+  { "type": "party", "name": "Miljöpartiet", "slug": "miljopartiet", "abbreviation": "MP", "color": "#83CF39", "aliases": ["MP", "Miljöpartiet", "miljöpartiet", "Miljöpartiet de gröna"] }
 ]
 ```
 
@@ -325,18 +345,18 @@ Refreshas periodiskt: `REFRESH MATERIALIZED VIEW CONCURRENTLY politician_issue_s
 
 ```json
 [
-  { "name": "migration" },
-  { "name": "energy" },
-  { "name": "defense" },
-  { "name": "taxation" },
-  { "name": "education" },
-  { "name": "climate" },
-  { "name": "healthcare" },
-  { "name": "crime" },
-  { "name": "economy" },
-  { "name": "labor" },
-  { "name": "housing" },
-  { "name": "foreign_policy" }
+  { "name": "migration", "slug": "migration", "display_name": "Migration" },
+  { "name": "energy", "slug": "energi", "display_name": "Energi" },
+  { "name": "defense", "slug": "forsvar", "display_name": "Försvar" },
+  { "name": "taxation", "slug": "skatter", "display_name": "Skatter" },
+  { "name": "education", "slug": "utbildning", "display_name": "Utbildning" },
+  { "name": "climate", "slug": "klimat", "display_name": "Klimat" },
+  { "name": "healthcare", "slug": "sjukvard", "display_name": "Sjukvård" },
+  { "name": "crime", "slug": "brottslighet", "display_name": "Brottslighet" },
+  { "name": "economy", "slug": "ekonomi", "display_name": "Ekonomi" },
+  { "name": "labor", "slug": "arbetsmarknad", "display_name": "Arbetsmarknad" },
+  { "name": "housing", "slug": "bostad", "display_name": "Bostad" },
+  { "name": "foreign_policy", "slug": "utrikespolitik", "display_name": "Utrikespolitik" }
 ]
 ```
 
