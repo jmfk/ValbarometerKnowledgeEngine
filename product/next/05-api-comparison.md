@@ -14,6 +14,8 @@ Exponera kunskapsbasen via ett API för att möjliggöra jämförelser och analy
 ### MVP Endpoints
 
 ```
+GET  /health                            Health check (DB-anslutning, senaste ingestion timestamp)
+
 GET  /entities                          Lista alla entiteter (partier, politiker)
 GET  /entities/{id}                     Detaljer för en entitet
 
@@ -26,10 +28,19 @@ GET  /votes                             Lista voteringar, filtrera på topic/dat
 GET  /votes/{id}                        Detaljer för en votering med positioner per parti
 ```
 
+### Observabilitet
+
+- **Health endpoint**: `GET /health` returnerar DB-status, senaste ingestion-timestamp från `ingestion_state`, och antal claims/documents.
+- **Request logging**: `structlog` middleware som loggar method, path, status_code, duration per request.
+- **Metrics**:
+  - `api_requests_total{method, path, status}`
+  - `api_request_duration_seconds{method, path}`
+
 ### MVP Tekniska steg
 - Bygga FastAPI-endpoints enligt ovan.
 - Implementera metadata-filter + vector search (pgvector).
 - Skapa filter för ämnen (topics) och entiteter (partier/politiker).
+- Konfigurera `structlog` middleware och health endpoint.
 
 ---
 

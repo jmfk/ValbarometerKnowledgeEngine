@@ -21,6 +21,8 @@ Systemet är uppbyggt som en datamotor för politisk analys med fokus på transp
 ## 3. Teknisk Stack
 - **Språk**: Python 3.11+
 - **Databas**: PostgreSQL (Linode, Docker) + pgvector
+- **Migrationer**: Alembic (SQLAlchemy)
 - **AI/NLP**: OpenAI (text-embedding-3-small, 1536 dim), Gemini 2.5 Flash för extraktion/classification.
 - **API**: FastAPI
 - **Storage**: Lokal disk / S3-kompatibel (bestäms vid deploy)
+- **Observabilitet**: structlog + Prometheus metrics

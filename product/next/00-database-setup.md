@@ -5,6 +5,24 @@ Referens: [MVP1.md](../MVP1.md) (Datamodell, Storage)
 ## Mål
 Etablera fullständigt databasschema, seed data och objektlagring innan ingestion börjar.
 
+## Migrationsverktyg
+
+**Alembic** med SQLAlchemy som ORM. Alla schemaändringar görs via migrationsfiler, inte manuell SQL.
+
+```
+alembic/
+├── env.py
+├── versions/
+│   ├── 001_extensions_and_enums.py
+│   ├── 002_entities_and_affiliations.py
+│   ├── 003_documents_and_chunks.py
+│   ├── 004_topics_and_chunk_topics.py
+│   ├── 005_claims_and_evidence.py
+│   ├── 006_votes_and_positions.py
+│   └── 007_materialized_views.py
+└── alembic.ini
+```
+
 ## PostgreSQL Extensions
 
 ```sql
@@ -24,6 +42,21 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 | name       | text                                          | NOT NULL    |
 | aliases    | jsonb                                         | DEFAULT '[]' |
 | created_at | timestamptz                                   | DEFAULT now |
+
+### ingestion_state
+
+Checkpointing för inkrementell hämtning. En rad per dokumenttyp och källa.
+
+| field            | type        | constraint        |
+| ---------------- | ----------- | ----------------- |
+| id               | uuid        | PK, default       |
+| source           | text        | NOT NULL          |
+| document_type    | text        | NOT NULL          |
+| last_fetched_at  | timestamptz |                   |
+| last_status      | text        | DEFAULT 'idle'    |
+| updated_at       | timestamptz | DEFAULT now       |
+
+Composite unique: `(source, document_type)`.
 
 ### politician_affiliations
 
@@ -52,6 +85,11 @@ Kopplar politiker till parti med tidsperiod (hanterar partibyten).
 | created_at    | timestamptz                                                                                                   | DEFAULT now |
 
 `raw_storage_key` pekar på originaldokumentet i S3.
+
+Index:
+```sql
+CREATE UNIQUE INDEX idx_documents_external_id ON documents ((metadata->>'external_id')) WHERE metadata->>'external_id' IS NOT NULL;
+```
 
 ### document_chunks
 
@@ -105,6 +143,8 @@ Composite PK: `(chunk_id, topic_id)`.
 | valid_from        | date                                          |              |
 | valid_to          | date                                          |              |
 | review_status     | enum('pending', 'approved', 'rejected')       | DEFAULT 'pending' |
+| extraction_model  | text                                          |              |
+| extraction_prompt_version | text                                  |              |
 | created_at        | timestamptz                                   | DEFAULT now  |
 
 `valid_from` / `valid_to` möjliggör policy drift detection.
@@ -120,6 +160,25 @@ Many-to-many: en claim kan röra flera sakfrågor (t.ex. "klimatskatt" → clima
 | topic_id | uuid | FK topics, NOT NULL |
 
 Composite PK: `(claim_id, topic_id)`.
+
+### claim_history
+
+Audit trail för claim-ändringar (stance, review_status, topic). Skapas automatiskt vid varje uppdatering.
+
+| field         | type        | constraint        |
+| ------------- | ----------- | ----------------- |
+| id            | uuid        | PK, default       |
+| claim_id      | uuid        | FK claims         |
+| changed_field | text        | NOT NULL          |
+| old_value     | text        |                   |
+| new_value     | text        |                   |
+| changed_by    | text        |                   |
+| changed_at    | timestamptz | DEFAULT now       |
+
+Index:
+```sql
+CREATE INDEX idx_claim_history_claim ON claim_history (claim_id);
+```
 
 ### claim_evidence
 
@@ -154,21 +213,59 @@ Alltid per ledamot (politician). Parti-aggregering beräknas via `politician_aff
 
 Composite unique constraint: `(vote_id, politician_id)`.
 
+### politician_issue_scores (materialized view)
+
+Aggregerad poäng per politiker och sakfråga. Beräknas från antal motioner, anföranden och citat kopplade till en topic, viktat efter dokumenttyp.
+
+| field       | type        | note                  |
+| ----------- | ----------- | --------------------- |
+| entity_id   | uuid        | FK entities (politician) |
+| topic_id    | uuid        | FK topics             |
+| score       | float       | Viktat poäng          |
+| doc_count   | int         | Antal dokument        |
+| computed_at | timestamptz | Senaste beräkning     |
+
+```sql
+CREATE MATERIALIZED VIEW politician_issue_scores AS
+SELECT
+  d.source_id AS entity_id,
+  ct.topic_id,
+  COUNT(DISTINCT d.id) AS doc_count,
+  SUM(CASE d.document_type
+    WHEN 'motion' THEN 3
+    WHEN 'speech' THEN 2
+    ELSE 1
+  END)::float AS score,
+  now() AS computed_at
+FROM documents d
+JOIN document_chunks dc ON dc.document_id = d.id
+JOIN chunk_topics ct ON ct.chunk_id = dc.id
+WHERE d.source_id IN (SELECT id FROM entities WHERE type = 'politician')
+GROUP BY d.source_id, ct.topic_id;
+
+CREATE UNIQUE INDEX idx_pis_entity_topic ON politician_issue_scores (entity_id, topic_id);
+```
+
+Refreshas periodiskt: `REFRESH MATERIALIZED VIEW CONCURRENTLY politician_issue_scores;`
+
 ## Migrationsordning
 
 1. Extensions (`pgvector`, `pg_trgm`, `pgcrypto`)
 2. Enum types
 3. `entities`
-4. `politician_affiliations` (FK → entities)
-5. `documents` (FK → entities)
-6. `document_chunks` (FK → documents) + index
-7. `topics`
-8. `chunk_topics` (FK → document_chunks, topics)
-9. `claims` (FK → entities)
-10. `claim_topics` (FK → claims, topics)
-11. `claim_evidence` (FK → claims, document_chunks)
-12. `votes` (FK → topics)
-13. `vote_positions` (FK → votes, entities)
+4. `ingestion_state`
+5. `politician_affiliations` (FK → entities)
+6. `documents` (FK → entities) + unique index
+7. `document_chunks` (FK → documents) + index
+8. `topics`
+9. `chunk_topics` (FK → document_chunks, topics)
+10. `claims` (FK → entities)
+11. `claim_topics` (FK → claims, topics)
+12. `claim_history` (FK → claims)
+13. `claim_evidence` (FK → claims, document_chunks)
+14. `votes` (FK → topics)
+15. `vote_positions` (FK → votes, entities)
+16. `politician_issue_scores` (materialized view)
 
 ## Seed data: Riksdagspartier
 
