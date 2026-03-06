@@ -1,33 +1,54 @@
-.PHONY: test test-backend test-frontend test-infra test-integration test-regression lint lint-backend lint-frontend
+.PHONY: install setup venv benchmark benchmark-list benchmark-case test lint help
 
-test: test-backend test-frontend test-infra test-integration test-regression lint
+VENV := .venv
+PYTHON := $(VENV)/bin/python
+PIP := $(VENV)/bin/pip
 
-test-backend:
-	@echo "Running backend tests..."
-	pytest tests/
+help:
+	@echo "Usage:"
+	@echo "  make setup                              Create venv and install deps"
+	@echo "  make install                            Install deps into existing venv"
+	@echo "  make benchmark MODELS=m1,m2             Run benchmark on comma-separated models"
+	@echo "  make benchmark-case MODELS=m1 CASE=id   Run single test case"
+	@echo "  make benchmark-list                     List available models"
+	@echo "  make test                               Run pytest"
+	@echo "  make lint                               Run ruff linter"
 
-test-frontend:
-	@echo "Running frontend tests..."
-	cd frontend && npm test -- --run
+setup: venv install
+	@echo "Done. Activate with: source $(VENV)/bin/activate"
 
-test-infra:
-	@echo "Running infra tests..."
-	pytest tests/test_infra.py
+venv:
+	@test -d $(VENV) || python3 -m venv $(VENV)
 
-test-integration:
-	@echo "Running integration tests..."
-	pytest tests/integration/
+install: venv
+	$(PIP) install -r benchmarks/claim_extraction/requirements.txt
 
-test-regression:
-	@echo "Running regression tests..."
-	pytest tests/regression/
+benchmark: install
+ifndef MODELS
+	$(error Usage: make benchmark MODELS=gemini-2.5-flash,gpt-4o-mini)
+endif
+	@for model in $$(echo $(MODELS) | tr ',' ' '); do \
+		echo "=== Benchmarking $$model ==="; \
+		$(PYTHON) -m benchmarks.claim_extraction.run_benchmark --model $$model; \
+	done
 
-lint: lint-backend lint-frontend
+benchmark-list: install
+	@$(PYTHON) -m benchmarks.claim_extraction.run_benchmark --list-models
 
-lint-backend:
-	@echo "Running backend linting..."
-	ruff check vibe_tools/
+benchmark-case: install
+ifndef MODELS
+	$(error Usage: make benchmark-case MODELS=gemini-2.5-flash CASE=case_01)
+endif
+ifndef CASE
+	$(error Usage: make benchmark-case MODELS=gemini-2.5-flash CASE=case_01)
+endif
+	@for model in $$(echo $(MODELS) | tr ',' ' '); do \
+		echo "=== Benchmarking $$model on $(CASE) ==="; \
+		$(PYTHON) -m benchmarks.claim_extraction.run_benchmark --model $$model --case $(CASE); \
+	done
 
-lint-frontend:
-	@echo "Running frontend linting..."
-	cd frontend && npm run lint
+test: install
+	$(VENV)/bin/pytest tests/
+
+lint: install
+	$(VENV)/bin/ruff check benchmarks/
